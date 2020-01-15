@@ -16,10 +16,10 @@ public:
 
    virtual void connectTo(const char *ip_addr, unsigned short port);
    virtual void handleConnection();
-
    virtual void closeConn();
 
 private:
+   int socketFD;
 
 };
 
