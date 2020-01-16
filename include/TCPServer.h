@@ -4,6 +4,7 @@
 #include <vector>
 #include "Server.h"
 #include <arpa/inet.h>
+#include "FileDesc.h"
 //#include "TCPConn.h"
 
 class TCPServer : public Server 
@@ -17,9 +18,7 @@ public:
    void shutdown();
 
 private:
-   int socketFD;
-   struct sockaddr_in addrServ;
-   std::vector<int> connectionList;
+   serverSocketFD* serverFD;
 };
 
 
