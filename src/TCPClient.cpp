@@ -63,7 +63,7 @@ void TCPClient::handleConnection()
 
 void TCPClient::closeConn()
 {
-    //close(this->clientFD);
+    exit(1);
 }
 
 

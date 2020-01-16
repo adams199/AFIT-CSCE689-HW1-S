@@ -170,7 +170,7 @@ public:
                         //set the string terminating NULL byte on the end  
                         //of the data read  
                         dataBuffer[readMsg] = '\0';   
-                        send(clientSocket, dataBuffer, strlen(dataBuffer), 0);
+                        //send(clientSocket, dataBuffer, strlen(dataBuffer), 0);
                         printf("Responding to: %s", dataBuffer);
                     }   
                 }   
@@ -204,20 +204,54 @@ class clientSocketFD : FileDesc
 
     void clientHandle()
     {
+        struct timeval timeVal;
+        timeVal.tv_sec = 0;
+        timeVal.tv_usec = 10; // timeout after 10 microseconds
+        fd_set readfds;
+        int socketActivity;
+        char dataBuffer[1024] = {0};
+
         while (true)
         {
-            std::string sendMsg;
-            std::getline(std::cin, sendMsg);
-            
-            this->socketSend(this->socketFD, sendMsg);
+            //clear the socket set  
+            FD_ZERO(&readfds);   
+            FD_SET(this->socketFD, &readfds);
+            FD_SET(0, &readfds);
+
+            socketActivity = select(this->socketFD + 1, &readfds, NULL, NULL, &timeVal);
+            if (FD_ISSET(0, &readfds)) // stdin fd, then there is stuff to place in buffer
+            {
+                if ((read(0, dataBuffer, 1024)) <= 0)
+                    throw std::runtime_error("read error from stdin");
+            }
+            if (FD_ISSET(this->socketFD, &readfds))
+            {
+                if (read(this->socketFD, dataBuffer, 1024) <= 0) //if select sees data but read none then connection closed
+                    exit(0);
+            }
+
+            for (int i = 0; i < 1024; i++)
+            {
+                if (dataBuffer[i] == '\n')
+                {
+                    char sendMsg[i+1];
+                    strncpy(dataBuffer, sendMsg, i);
+                    sendMsg[i] = '\0';
+                    send(socketFD, sendMsg, strlen(sendMsg), 0);  //send messages function.
+                }
+            }
+            //this->socketSend(this->socketFD, sendMsg);
     
             char readMsg[1024] = {0};
             if (read(this->socketFD, readMsg, 1024) < 0)
                 printf("Read failed\n"); 
-            printf("%s\n", readMsg);
+            //printf("%s\n", readMsg);
         }
     }
 
 
-};
+}; //if select detects data and read returns 0 its been closed
+// server needs to read exit command and call close(client)
+//select the stdin (fd 0) to see if there is data and then put in buffer and
+//if buffer has a \n then send that command
 
