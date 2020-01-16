@@ -1,8 +1,9 @@
 #ifndef TCPCLIENT_H
 #define TCPCLIENT_H
-
+#pragma once
 #include <string>
 #include "Client.h"
+#include "FileDesc.h"
 
 // The amount to read in before we send a packet
 const unsigned int stdin_bufsize = 50;
@@ -19,8 +20,7 @@ public:
    virtual void closeConn();
 
 private:
-   int socketFD;
-
+   clientSocketFD* clientFD;
 };
 
 
