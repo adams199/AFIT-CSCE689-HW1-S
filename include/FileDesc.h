@@ -12,6 +12,7 @@
 #include <netinet/in.h>  
 #include <sys/time.h> 
 #include <exception>
+#include <fcntl.h>
 
 class FileDesc
 {
@@ -146,13 +147,17 @@ public:
                 
             //else its some IO operation on some other socket 
             for (int i = 0; i < maxClients; i++)   
-            {   
+            {  
+                if (clientSocketList[i] == 0)
+                  continue;
+
                 clientSocket = clientSocketList[i];   
                     
                 if (FD_ISSET(clientSocket, &readfds))   
                 {   
                     //Check if it was for closing , and also read the  
                     //incoming message  
+                    memset(dataBuffer, 0, 1024);
                     if ((readMsg = read(clientSocket, dataBuffer, 1024)) == 0)   
                     {   
                         //Somebody disconnected , get his details and print  
@@ -188,6 +193,8 @@ class clientSocketFD : FileDesc
     {
         if ((this->socketFD = socket(AF_INET, SOCK_STREAM, 0)) == 0)
             throw std::runtime_error("Socket creation failed\n");
+
+        fcntl(socketFD, F_SETFL, fcntl(socketFD, F_GETFL) | O_NONBLOCK);
     };
     ~clientSocketFD() {};
 
@@ -209,42 +216,55 @@ class clientSocketFD : FileDesc
         timeVal.tv_usec = 10; // timeout after 10 microseconds
         fd_set readfds;
         int socketActivity;
-        char dataBuffer[1024] = {0};
+        std::string dataBuffer = "";
 
         while (true)
         {
             //clear the socket set  
             FD_ZERO(&readfds);   
             FD_SET(this->socketFD, &readfds);
-            FD_SET(0, &readfds);
+            FD_SET(STDIN_FILENO, &readfds);
 
             socketActivity = select(this->socketFD + 1, &readfds, NULL, NULL, &timeVal);
-            if (FD_ISSET(0, &readfds)) // stdin fd, then there is stuff to place in buffer
+            if (FD_ISSET(STDIN_FILENO, &readfds)) // stdin fd, then there is stuff to place in buffer
             {
-                if ((read(0, dataBuffer, 1024)) <= 0)
+                char readBuf[1024];
+                int amountRead = 0;
+                if ((amountRead = (read(STDIN_FILENO, readBuf, 1024))) <= 0)
                     throw std::runtime_error("read error from stdin");
+                std::cout << amountRead;
+                std::cout << dataBuffer;
+                dataBuffer += readBuf;
+                int curpos;
+                if ((curpos = dataBuffer.find("\n")) == std::string::npos)
+                {
+                    printf("found endline at %d\n", curpos);
+                }
+                printf("found endline at %d\n", curpos);
+
+               std::string cmd;
+               cmd = dataBuffer.substr(0, curpos+1);
+               dataBuffer.erase(0, curpos+1);
+
+
+               send(socketFD, cmd.c_str(), cmd.size(), 0);
             }
             if (FD_ISSET(this->socketFD, &readfds))
             {
-                if (read(this->socketFD, dataBuffer, 1024) <= 0) //if select sees data but read none then connection closed
+               char checkBuf[1024];
+                if (read(this->socketFD, checkBuf, 1024) <= 0) //if select sees data but read none then connection closed
+                {
+                    std::cout << "The server closed the connection\n";
                     exit(0);
+                }
+                std::cout << checkBuf;
             }
 
-            for (int i = 0; i < 1024; i++)
-            {
-                if (dataBuffer[i] == '\n')
-                {
-                    char sendMsg[i+1];
-                    strncpy(dataBuffer, sendMsg, i);
-                    sendMsg[i] = '\0';
-                    send(socketFD, sendMsg, strlen(sendMsg), 0);  //send messages function.
-                }
-            }
             //this->socketSend(this->socketFD, sendMsg);
     
-            char readMsg[1024] = {0};
-            if (read(this->socketFD, readMsg, 1024) < 0)
-                printf("Read failed\n"); 
+           // cddhar readMsg[1024] = {0};
+           // if (read(this->socketFD, readMsg, 1024) < 0)
+            //    printf("Read failed\n"); 
             //printf("%s\n", readMsg);
         }
     }
