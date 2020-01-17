@@ -161,41 +161,51 @@ void TCPServer::handleMsg(char readMsg[], int readMsgSize, int clientSocket)
     //set the string terminating NULL byte on the end of the data read  
     readMsg[readMsgSize] = '\0';
     std::string rMsg(readMsg, readMsgSize);
-    std::cout << "Responding to: " + rMsg;
-    std::string sendMsg = "Unknown command: " + rMsg;
-
-    if (rMsg == "hello\n")
-        sendMsg = "Well hello to you too!\n";
-    else if (rMsg == "1\n")
-        sendMsg = "One is the loneliest number...\n";
-    else if (rMsg == "2\n")
-        sendMsg = "Two can be as bad as one...\n";
-    else if (rMsg == "3\n")
-        sendMsg = "Three is the sadest experience...\n";
-    else if (rMsg == "4\n")
-        sendMsg = "Four is just no good anymore...\n";
-    else if (rMsg == "5\n")
-        sendMsg = "Thank you Dayton! We are Three Dog Night!\n";
-    else if (rMsg == "passwd\n")
-        sendMsg = "Better keep that safe...\n";
-    else if (rMsg == "menu\n")
-        sendMsg = this->menuMsg;
-    else if (rMsg == "exit\n")
+    int curpos = rMsg.find("\n"); //returns -1 if \n not found
+    while (curpos != -1)
     {
-        for (int i=0;i < clientSocketList.size(); i++)
+        std::string cmd;
+        cmd = rMsg.substr(0, curpos+1);
+        rMsg.erase(0, curpos+1);
+
+        std::cout << "Responding to: " + cmd;
+        std::string sendMsg = "Unknown command: " + cmd;
+
+        if (cmd == "hello\n")
+            sendMsg = "Well hello to you too!\n";
+        else if (cmd == "1\n")
+            sendMsg = "One is the loneliest number...\n";
+        else if (cmd == "2\n")
+            sendMsg = "Two can be as bad as one...\n";
+        else if (cmd == "3\n")
+            sendMsg = "Three is the sadest experience...\n";
+        else if (cmd == "4\n")
+            sendMsg = "Four is just no good anymore...\n";
+        else if (cmd == "5\n")
+            sendMsg = "Thank you Dayton! We are Three Dog Night!\n";
+        else if (cmd == "passwd\n")
+            sendMsg = "Better keep that safe...\n";
+        else if (cmd == "menu\n")
+            sendMsg = this->menuMsg;
+        else if (cmd == "exit\n")
         {
-            if (clientSocketList.at(i) == clientSocket) //needs to be different than above due to buf overflows of erasure of vectors
-            {                                           //for this implementation cannot be single kill() method
-                int addrLen = sizeof(this->address);
-                getpeername(clientSocket , (struct sockaddr*)&this->address, (socklen_t*)&addrLen);   
-                printf("Disconnected! ip %s, port %d\n", inet_ntoa(this->address.sin_addr), ntohs(this->address.sin_port));
-                close(clientSocket);
-                clientSocketList.at(i)=0;
-                break;
+            for (int i=0;i < clientSocketList.size(); i++)
+            {
+                if (clientSocketList.at(i) == clientSocket) //needs to be different than above due to buf overflows of erasure of vectors
+                {                                           //for this implementation cannot be single kill() method
+                    int addrLen = sizeof(this->address);
+                    getpeername(clientSocket , (struct sockaddr*)&this->address, (socklen_t*)&addrLen);   
+                    printf("Disconnected! ip %s, port %d\n", inet_ntoa(this->address.sin_addr), ntohs(this->address.sin_port));
+                    close(clientSocket);
+                    clientSocketList.at(i)=0;
+                    break;
+                }
             }
         }
-    }
 
-    if (rMsg != "exit\n")
-        serverSend(clientSocket, sendMsg);
+        if (cmd != "exit\n")
+            serverSend(clientSocket, sendMsg);
+
+        curpos = rMsg.find("\n");
+    }
 }
