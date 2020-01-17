@@ -1,12 +1,19 @@
 #include "TCPServer.h"
+#include <vector>
+#include "Server.h"
+#include <arpa/inet.h>
+#include <string>
+#include <cstring>
+#include <iostream>
 #include <stdio.h>
-#include <iostream> 
-#include <sys/types.h>
-#include <sys/socket.h> 
-#include <arpa/inet.h> 
-#include <unistd.h> 
-#include <string.h>
-#include "FileDesc.h"
+#include <stdlib.h>  
+#include <errno.h>  
+#include <unistd.h>      
+#include <sys/types.h>  
+#include <sys/socket.h>  
+#include <netinet/in.h>  
+#include <sys/time.h>
+#include <fcntl.h>
 
 TCPServer::TCPServer()
 {
@@ -28,9 +35,12 @@ TCPServer::~TCPServer() {
 
 void TCPServer::bindSvr(const char *ip_addr, short unsigned int port)
 {
+    // create the sockaddr struct
     this->address.sin_family = AF_INET;   
     this->address.sin_addr.s_addr = INADDR_ANY;   
     this->address.sin_port = htons( port );
+
+    // bind server to passed in ip and port
     if ((bind(this->socketFD, (struct sockaddr *)&this->address, sizeof(this->address))) < 0)
         throw std::runtime_error("Bind failed\n");
 }
@@ -46,14 +56,19 @@ void TCPServer::bindSvr(const char *ip_addr, short unsigned int port)
 void TCPServer::listenSvr()
 {
     int newSocket, socketActivity, maxSocket=this->socketFD;
+
+    // create timeval struct for timeout
     struct timeval timeVal;
     timeVal.tv_sec = 0;
     timeVal.tv_usec = 10; // timeout after 10 microseconds
+
+    //create the fd_set, can monitor multiple file descriptors
     fd_set readfds;
     
     char readMsg[1024];
     int readMsgSize;
 
+    //ensure listen return successfully
     if (listen(this->socketFD, 3) < 0)   
         throw std::runtime_error("Listen failed\n");
         
@@ -62,9 +77,10 @@ void TCPServer::listenSvr()
     {   
         //clear the socket set  
         FD_ZERO(&readfds);   
-        //add master socket to set  
+        //add server socket to set  
         FD_SET(this->socketFD, &readfds);    
         
+        //add each of the clients to the readfds to be monitored
         for(int clientSocket : clientSocketList)
         {
             if(clientSocket > 0)   
@@ -73,8 +89,10 @@ void TCPServer::listenSvr()
                 maxSocket = clientSocket; 
         }
 
+        // poll the sockets of the readfds for activity
         socketActivity = select(maxSocket + 1 , &readfds, NULL, NULL, &timeVal);   
     
+        // because non-blocking, ensure on fail it is not due to select still spinning ip
         if ((socketActivity < 0) && (errno!=EINTR))   
             printf("socketActivty select error");      
             
@@ -85,7 +103,7 @@ void TCPServer::listenSvr()
             if ((newSocket = accept(this->socketFD, (struct sockaddr *)&this->address, (socklen_t*)&addrLen)) < 0)   
                 throw std::runtime_error("Accept failed\n");
             
-            //inform user of socket number - used in send and receive commands  
+            //inform user of connection  
             printf("Connected! Socket FD: %d, ip: %s, port: %d\n", newSocket, inet_ntoa(address.sin_addr), ntohs (address.sin_port));
         
             //send new connection menu message
@@ -96,30 +114,32 @@ void TCPServer::listenSvr()
             
         }   
             
-        //else its some IO operation on some other socket
+        //else its some operation on some other socket, loop through the clients
         for(auto it=clientSocketList.begin(); it!=clientSocketList.end(); it++)
         {
             int clientSocket = *it;
             if(clientSocket == 0) 
                 continue;  
-                
+            
+            // if we found the client that had activity
             if (FD_ISSET(clientSocket, &readfds))   
             {   
                 //Check if it was for closing , and also read the incoming message  
                 memset(readMsg, 0, 1024);
                 if ((readMsgSize = read(clientSocket, readMsg, 1024)) == 0)   
                 {   
-                    //Somebody disconnected , get his details and print
+                    //it was for closing, somebody disconnected, get details
                     int addrLen = sizeof(this->address);
                     getpeername(clientSocket , (struct sockaddr*)&this->address, (socklen_t*)&addrLen);   
                     printf("Disconnected! ip %s, port %d\n", inet_ntoa(this->address.sin_addr), ntohs(this->address.sin_port));   
                     
-                    //Close the socket and mark as 0 in list for reus
+                    //Close the socket and delete the client from the list
                     close( clientSocket );
                     clientSocketList.erase(it--);
                     
                 }   
-                else  
+                else 
+                    // it wasn't for closing, handle the msg the client sent the server
                     handleMsg(readMsg, readMsgSize, clientSocket);
                       
             }   
@@ -160,17 +180,30 @@ void TCPServer::handleMsg(char readMsg[], int readMsgSize, int clientSocket)
 {
     //set the string terminating NULL byte on the end of the data read  
     readMsg[readMsgSize] = '\0';
+
+    // create a std::string from the char buffer
     std::string rMsg(readMsg, readMsgSize);
+
+    // look for a \n in the std::string rMsg
     int curpos = rMsg.find("\n"); //returns -1 if \n not found
+
+    // while we still found a \n in rMsg
     while (curpos != -1)
     {
+        // make a substring of the command up into the \n
         std::string cmd;
         cmd = rMsg.substr(0, curpos+1);
+
+        // erase the substring from the whole rMsg
         rMsg.erase(0, curpos+1);
 
+        // server outputs the command it recieved to the screen
         std::cout << "Responding to: " + cmd;
+
+        // default reply from server
         std::string sendMsg = "Unknown command: " + cmd;
 
+        // if valid reply, update sendMsg
         if (cmd == "hello\n")
             sendMsg = "Well hello to you too!\n";
         else if (cmd == "1\n")
@@ -189,23 +222,30 @@ void TCPServer::handleMsg(char readMsg[], int readMsgSize, int clientSocket)
             sendMsg = this->menuMsg;
         else if (cmd == "exit\n")
         {
+            // if a client called exit, loop through the clients to find the right fd
             for (int i=0;i < clientSocketList.size(); i++)
             {
-                if (clientSocketList.at(i) == clientSocket) //needs to be different than above due to buf overflows of erasure of vectors
-                {                                           //for this implementation cannot be single kill() method
+                // found the client
+                if (clientSocketList.at(i) == clientSocket)
+
+                    // print info on the client to the server screen
                     int addrLen = sizeof(this->address);
                     getpeername(clientSocket , (struct sockaddr*)&this->address, (socklen_t*)&addrLen);   
                     printf("Disconnected! ip %s, port %d\n", inet_ntoa(this->address.sin_addr), ntohs(this->address.sin_port));
+
+                    // close the client, set the FD to 0 in the client list (avoids erasure of active iterator object)
                     close(clientSocket);
                     clientSocketList.at(i)=0;
-                    break;
+                    break; // no need to keep looking for the client
                 }
             }
         }
 
+        // only send sendMsg when the client isn't exiting
         if (cmd != "exit\n")
             serverSend(clientSocket, sendMsg);
 
+        // find the next \n so we can continue parsing the whole rMsg that was sent
         curpos = rMsg.find("\n");
     }
 }

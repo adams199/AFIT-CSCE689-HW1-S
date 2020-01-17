@@ -1,23 +1,12 @@
 #ifndef TCPSERVER_H
 #define TCPSERVER_H
-#pragma once
-#include <vector>
-#include "Server.h"
-#include <arpa/inet.h>
-#include "FileDesc.h"
-#include <string>
-#include <cstring>
-#include <iostream>
-#include <stdio.h>  
-#include <stdlib.h>  
-#include <errno.h>  
-#include <unistd.h>      
-#include <sys/types.h>  
-#include <sys/socket.h>  
+#include "Server.h"    
+#include <sys/types.h>   
 #include <netinet/in.h>  
-#include <sys/time.h> 
-#include <exception>
-#include <fcntl.h>
+#include <sys/time.h>
+#include <string>
+#include <vector> 
+
 
 class TCPServer : public Server 
 {

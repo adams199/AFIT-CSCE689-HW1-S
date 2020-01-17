@@ -1,14 +1,19 @@
 
 #include "TCPClient.h"
-
+#include <vector>
+#include <arpa/inet.h>
+#include <string>
+#include <cstring>
+#include <iostream>
 #include <stdio.h>
-#include <iostream> 
-#include <sys/types.h>
-#include <sys/socket.h> 
-#include <arpa/inet.h> 
-#include <unistd.h> 
-#include <string.h>
-#include "FileDesc.h"
+#include <stdlib.h>  
+#include <errno.h>  
+#include <unistd.h>      
+#include <sys/types.h>  
+#include <sys/socket.h>  
+#include <netinet/in.h>  
+#include <sys/time.h>
+#include <fcntl.h>
 
 
 /**********************************************************************************************
@@ -41,12 +46,17 @@ TCPClient::~TCPClient() {
 
 void TCPClient::connectTo(const char *ip_addr, unsigned short port)
 {
+    //create the sock address struct
     struct sockaddr_in serv_addr;
     serv_addr.sin_family = AF_INET; 
     serv_addr.sin_port = htons(port); 
-    if(inet_pton(AF_INET, ip_addr, &serv_addr.sin_addr)<=0)  //0, -1 is returned for lsightly different errors
+
+    //0, -1 is returned for sightly different errors
+    if(inet_pton(AF_INET, ip_addr, &serv_addr.sin_addr)<=0)  
         throw std::runtime_error("Invalid address\n");
-    if (connect(this->socketFD, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0 && errno != EINPROGRESS) //since non-blocking, need to check to see if it is just spinning up
+
+     //since non-blocking, need to check to see if it is just spinning up
+    if (connect(this->socketFD, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0 && errno != EINPROGRESS)
         throw std::runtime_error("Connection Failed\n");
 }
 
@@ -60,9 +70,12 @@ void TCPClient::connectTo(const char *ip_addr, unsigned short port)
 
 void TCPClient::handleConnection()
 {
+    //create the timeVal struct for timeout of sends and reads
     struct timeval timeVal;
     timeVal.tv_sec = 0;
     timeVal.tv_usec = 10; // timeout after 10 microseconds
+    
+    //create the fd_set, can monitor multiple file descriptors
     fd_set readfds;
 
     while (true)
@@ -92,16 +105,23 @@ void TCPClient::sendMsg(fd_set &readfds, struct timeval &timeVal)
 {
     int socketActivity;
     //clear the socket set  
-    FD_ZERO(&readfds);   
+    FD_ZERO(&readfds);
+
+    //set the stdin for readfds   
     FD_SET(STDIN_FILENO, &readfds);
+
+    //poll the sockets (stdin) for activity
     socketActivity = select(1, &readfds, NULL, NULL, &timeVal);
-    if (FD_ISSET(STDIN_FILENO, &readfds)) // stdin fd, then there is stuff to place in buffer
+
+    ////if stdin fd, then there something has been written, place in buffer
+    if (FD_ISSET(STDIN_FILENO, &readfds)) 
     {
         char readBuf[1024];
         int amountRead = 0;
         if ((amountRead = (read(STDIN_FILENO, readBuf, 1024))) <= 0)
             throw std::runtime_error("read error from stdin");
 
+        //send what was read from stdin
         send(socketFD, readBuf, amountRead, 0);
     }
 }
@@ -114,17 +134,24 @@ void TCPClient::sendMsg(fd_set &readfds, struct timeval &timeVal)
 void TCPClient::readMsg(fd_set &readfds, struct timeval &timeVal)
 {
     int socketActivity, amountRead=0;
+
+    // set the client fd into the readfds
     FD_ZERO(&readfds);   
     FD_SET(this->socketFD, &readfds);
+
+    // poll the sockets for the client fd
     socketActivity = select(this->socketFD + 1, &readfds, NULL, NULL, &timeVal);
     if (FD_ISSET(this->socketFD, &readfds))
     {
         char checkBuf[1024];
-        if ((amountRead = read(this->socketFD, checkBuf, 1024)) <= 0) //if select sees data but read none then connection closed
+        //if client FD was set but read no data then connection closed
+        if ((amountRead = read(this->socketFD, checkBuf, 1024)) <= 0) 
         {
             std::cout << "The server closed the connection\n";
             exit(0);
         }
+
+        //else put what we read to the screen
         std::string output(checkBuf, amountRead);
         std::cout << output; 
     }
